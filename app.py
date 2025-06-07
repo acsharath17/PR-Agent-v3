@@ -1,25 +1,26 @@
 import os
-import requests
-import openai
 import re
+import requests
 from typing import TypedDict, List
-from langgraph.graph import StateGraph, END
-from fastapi import FastAPI
-from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from dotenv import load_dotenv
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import markdown
-import numpy as np
 
+from dotenv import load_dotenv
+from langgraph.graph import StateGraph, END
+
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import HumanMessage
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Flask
 app = Flask(__name__)
 CORS(app)
 
-load_dotenv()
-
-openai.api_key = os.getenv("OPENAI_API_KEY")  # Load API key from environment
+# Initialize LangChain OpenAI wrapper
+llm = ChatOpenAI(model="gpt-4", temperature=0)
 
 # --- Define state schemas ---
 class FileResult(TypedDict):
@@ -68,25 +69,19 @@ def process_files(state: PRState) -> PRState:
     for file in state["files"]:
         diff = file["diff"]
 
-        explanation = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": f"Explain in detail the changes made in this file:\n\n{diff}"}],
-            max_tokens=500
-        ).choices[0].message.content.strip()
+        explanation = llm([
+            HumanMessage(content=f"Explain in detail the changes made in this file:\n\n{diff}")
+        ]).content.strip()
 
         review_comments = ""
         if file["is_apex"]:
-            review_comments = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": f"Review this Apex code diff:\n\n{diff}"}],
-                max_tokens=500
-            ).choices[0].message.content.strip()
+            review_comments = llm([
+                HumanMessage(content=f"Review this Apex code diff:\n\n{diff}")
+            ]).content.strip()
 
-        business_summary = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": f"Summarize this for business users (no technical terms):\n\n{diff}"}],
-            max_tokens=300
-        ).choices[0].message.content.strip()
+        business_summary = llm([
+            HumanMessage(content=f"Summarize this for business users (no technical terms):\n\n{diff}")
+        ]).content.strip()
 
         updated_files.append({
             **file,
@@ -101,17 +96,13 @@ def aggregate_summaries(state: PRState) -> PRState:
     explanations = [f"Changes in {f['filename']}:\n{f['explanation']}" for f in state["files"]]
     business_summaries = [f["business_summary"] for f in state["files"]]
 
-    dev_summary = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": "\n\n".join(explanations)}],
-        max_tokens=400
-    ).choices[0].message.content.strip()
+    dev_summary = llm([
+        HumanMessage(content="\n\n".join(explanations))
+    ]).content.strip()
 
-    business_summary = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": "\n\n".join(business_summaries)}],
-        max_tokens=300
-    ).choices[0].message.content.strip()
+    business_summary = llm([
+        HumanMessage(content="\n\n".join(business_summaries))
+    ]).content.strip()
 
     return {
         **state,
@@ -132,6 +123,7 @@ builder.add_edge("process_files", "aggregate_summaries")
 builder.add_edge("aggregate_summaries", END)
 graph = builder.compile()
 
+# --- Flask Endpoints ---
 @app.route("/analyze_pr", methods=["POST"])
 def analyze_pr():
     data = request.get_json()
