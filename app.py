@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+import logging
 from typing import TypedDict, List
 
 from flask import Flask, request, jsonify
@@ -9,17 +10,20 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 
-from langchain_openai import ChatOpenAI  # Updated import
+from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 
-# --- Load environment variables ---
+# --- Logging setup ---
+logging.basicConfig(level=logging.INFO)
+
+# --- Load and validate environment ---
 load_dotenv()
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
-if not openai_api_key:
-    raise RuntimeError("Missing OPENAI_API_KEY in environment variables")
+if not openai_api_key or not openai_api_key.startswith("sk-"):
+    raise ValueError("Invalid or missing OPENAI_API_KEY. Set it with: heroku config:set OPENAI_API_KEY=sk-...")
 
-# --- Initialize Flask app ---
+# --- Initialize Flask ---
 app = Flask(__name__)
 CORS(app)
 
@@ -46,7 +50,15 @@ class PRState(TypedDict):
     dev_summary: str
     business_summary: str
 
-# --- Helpers ---
+# --- Helper to safely call OpenAI ---
+def call_llm_safe(prompt: str) -> str:
+    try:
+        return llm([HumanMessage(content=prompt)]).content.strip()
+    except Exception as e:
+        logging.error(f"OpenAI API call failed: {e}")
+        return f"Error: {str(e)}"
+
+# --- Helper ---
 def is_apex_file(filename: str) -> bool:
     return filename.endswith(".cls") or filename.endswith(".trigger")
 
@@ -77,19 +89,13 @@ def process_files(state: PRState) -> PRState:
     for file in state["files"]:
         diff = file["diff"]
 
-        explanation = llm([
-            HumanMessage(content=f"Explain in detail the changes made in this file:\n\n{diff}")
-        ]).content.strip()
+        explanation = call_llm_safe(f"Explain in detail the changes made in this file:\n\n{diff}")
 
         review_comments = ""
         if file["is_apex"]:
-            review_comments = llm([
-                HumanMessage(content=f"Review this Apex code diff:\n\n{diff}")
-            ]).content.strip()
+            review_comments = call_llm_safe(f"Review this Apex code diff:\n\n{diff}")
 
-        business_summary = llm([
-            HumanMessage(content=f"Summarize this for business users (no technical terms):\n\n{diff}")
-        ]).content.strip()
+        business_summary = call_llm_safe(f"Summarize this for business users (no technical terms):\n\n{diff}")
 
         updated_files.append({
             **file,
@@ -104,13 +110,8 @@ def aggregate_summaries(state: PRState) -> PRState:
     explanations = [f"Changes in {f['filename']}:\n{f['explanation']}" for f in state["files"]]
     business_summaries = [f["business_summary"] for f in state["files"]]
 
-    dev_summary = llm([
-        HumanMessage(content="\n\n".join(explanations))
-    ]).content.strip()
-
-    business_summary = llm([
-        HumanMessage(content="\n\n".join(business_summaries))
-    ]).content.strip()
+    dev_summary = call_llm_safe("\n\n".join(explanations))
+    business_summary = call_llm_safe("\n\n".join(business_summaries))
 
     return {
         **state,
@@ -148,6 +149,7 @@ def analyze_pr():
             "files": result["files"]
         })
     except Exception as e:
+        logging.exception("Error during analysis")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')
