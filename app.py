@@ -2,6 +2,7 @@ import os
 import re
 import requests
 import logging
+import ssl
 from typing import TypedDict, List
 
 from flask import Flask, request, jsonify
@@ -30,10 +31,15 @@ if not openai_api_key or not openai_api_key.startswith("sk-"):
 app = Flask(__name__)
 CORS(app)
 
-# --- Redis Queue ---
-redis_conn = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+# --- Redis Queue (with SSL cert bypass for Heroku Redis) ---
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_conn = Redis.from_url(
+    redis_url,
+    ssl_cert_reqs=ssl.CERT_NONE if redis_url.startswith("rediss://") else None
+)
 task_queue = Queue(connection=redis_conn)
 
+# --- Routes ---
 @app.route("/analyze_pr", methods=["POST"])
 def analyze_pr():
     data = request.get_json()
