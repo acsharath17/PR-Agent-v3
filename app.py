@@ -9,7 +9,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI  # ✅ Updated import
 from langchain.schema import HumanMessage
 
 # Load environment variables
