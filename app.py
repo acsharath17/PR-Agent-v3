@@ -68,7 +68,7 @@ def process_files(state: PRState) -> PRState:
     for file in state["files"]:
         diff = file["diff"]
 
-        explanation = openai.chat.completions.create(
+        explanation = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": f"Explain in detail the changes made in this file:\n\n{diff}"}],
             max_tokens=500
@@ -76,13 +76,13 @@ def process_files(state: PRState) -> PRState:
 
         review_comments = ""
         if file["is_apex"]:
-            review_comments = openai.chat.completions.create(
+            review_comments = openai.ChatCompletion.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": f"Review this Apex code diff:\n\n{diff}"}],
                 max_tokens=500
             ).choices[0].message.content.strip()
 
-        business_summary = openai.chat.completions.create(
+        business_summary = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[{"role": "user", "content": f"Summarize this for business users (no technical terms):\n\n{diff}"}],
             max_tokens=300
@@ -101,13 +101,13 @@ def aggregate_summaries(state: PRState) -> PRState:
     explanations = [f"Changes in {f['filename']}:\n{f['explanation']}" for f in state["files"]]
     business_summaries = [f["business_summary"] for f in state["files"]]
 
-    dev_summary = openai.chat.completions.create(
+    dev_summary = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[{"role": "user", "content": "\n\n".join(explanations)}],
         max_tokens=400
     ).choices[0].message.content.strip()
 
-    business_summary = openai.chat.completions.create(
+    business_summary = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[{"role": "user", "content": "\n\n".join(business_summaries)}],
         max_tokens=300
