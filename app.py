@@ -9,18 +9,26 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 
-from langchain_openai import ChatOpenAI  # ✅ Updated import
+from langchain_openai import ChatOpenAI  # Updated import
 from langchain.schema import HumanMessage
 
-# Load environment variables
+# --- Load environment variables ---
 load_dotenv()
+openai_api_key = os.getenv("OPENAI_API_KEY")
 
-# Initialize Flask
+if not openai_api_key:
+    raise RuntimeError("Missing OPENAI_API_KEY in environment variables")
+
+# --- Initialize Flask app ---
 app = Flask(__name__)
 CORS(app)
 
-# Initialize LangChain OpenAI wrapper
-llm = ChatOpenAI(model="gpt-4", temperature=0)
+# --- Initialize LangChain OpenAI wrapper ---
+llm = ChatOpenAI(
+    model="gpt-4",
+    temperature=0,
+    openai_api_key=openai_api_key
+)
 
 # --- Define state schemas ---
 class FileResult(TypedDict):
@@ -38,7 +46,7 @@ class PRState(TypedDict):
     dev_summary: str
     business_summary: str
 
-# --- Helper ---
+# --- Helpers ---
 def is_apex_file(filename: str) -> bool:
     return filename.endswith(".cls") or filename.endswith(".trigger")
 
@@ -146,6 +154,6 @@ def analyze_pr():
 def hello_world():
     return 'Hello, World!'
 
-# For local testing
+# --- Local testing ---
 if __name__ == "__main__":
     app.run(debug=True)
