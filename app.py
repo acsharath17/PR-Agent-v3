@@ -132,6 +132,24 @@ builder.add_edge("process_files", "aggregate_summaries")
 builder.add_edge("aggregate_summaries", END)
 graph = builder.compile()
 
+@app.route("/analyze_pr", methods=["POST"])
+def analyze_pr():
+    data = request.get_json()
+    if not data or "pr_url" not in data:
+        return jsonify({"error": "Missing 'pr_url' in request body"}), 400
+
+    pr_url = data["pr_url"]
+
+    try:
+        result = graph.invoke({"pr_url": pr_url})
+        return jsonify({
+            "dev_summary": result["dev_summary"],
+            "business_summary": result["business_summary"],
+            "files": result["files"]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/')
 def hello_world():
     return 'Hello, World!'
